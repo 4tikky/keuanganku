@@ -9,8 +9,6 @@ import {
   TrendingDown, 
   Download, 
   Search, 
-  Filter, 
-  XCircle, 
   Trash2, 
   Pencil, 
   Save, 
@@ -20,7 +18,6 @@ import {
   AlertCircle, 
   PieChart,
   Settings,
-  Flag
 } from 'lucide-react';
 
 // --- TIPE DATA ---
@@ -39,7 +36,7 @@ type Transaction = {
 type ViewMode = 'dashboard' | 'transactions' | 'add' | 'analysis';
 
 // --- KONSTANTA ---
-const EXPENSE_CATEGORIES = ['Makanan', 'Transportasi', 'Skincare', 'Belanja', 'Tagihan', 'Hiburan', 'Kesehatan', 'Lainnya'];
+const EXPENSE_CATEGORIES = ['Makanan', 'Transportasi', 'Belanja', 'Tagihan', 'Hiburan', 'Kesehatan', 'Lainnya'];
 const INCOME_CATEGORIES = ['Gaji', 'Bonus', 'Investasi', 'Freelance', 'Lainnya'];
 const PRIORITIES: PriorityLevel[] = ['Tinggi', 'Sedang', 'Rendah'];
 
@@ -70,7 +67,7 @@ export default function App() {
     if (saved) {
       const parsed = JSON.parse(saved);
       // Migrasi data lama yang belum punya priority
-      return parsed.map((t: any) => ({ ...t, priority: t.priority || 'Sedang' }));
+      return parsed.map((t: Transaction) => ({ ...t, priority: t.priority || 'Sedang' }));
     }
     return [
       { id: 1, date: '2023-10-01', description: 'Gaji Bulanan', category: 'Gaji', amount: 8500000, type: 'income', priority: 'Tinggi' },
@@ -490,7 +487,7 @@ export default function App() {
         </nav>
 
         <div className="p-4 border-t border-slate-100 bg-slate-50">
-          <p className="text-xs text-slate-400 text-center">© 2026 Financial App v1.0</p>
+          <p className="text-xs text-slate-400 text-center">© 2024 Financial App v2.0</p>
         </div>
       </aside>
 
@@ -554,7 +551,18 @@ const MenuButton = ({ active, onClick, icon, label }: { active: boolean, onClick
   </button>
 );
 
-const TransactionTable = ({ data, title, isIncome, onDelete, onEdit, categories, filterValue, onFilterChange }: any) => (
+interface TransactionTableProps {
+  data: Transaction[];
+  title: string;
+  isIncome: boolean;
+  onDelete: (id: number) => void;
+  onEdit: (t: Transaction) => void;
+  categories?: string[];
+  filterValue?: string;
+  onFilterChange?: (val: string) => void;
+}
+
+const TransactionTable = ({ data, title, isIncome, onDelete, onEdit, categories, filterValue, onFilterChange }: TransactionTableProps) => (
   <div className={`rounded-xl shadow-sm border overflow-hidden ${isIncome ? 'border-emerald-100 bg-emerald-50/30' : 'border-rose-100 bg-rose-50/30'}`}>
     <div className={`p-4 border-b flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 ${isIncome ? 'bg-emerald-50/50 border-emerald-100' : 'bg-rose-50/50 border-rose-100'}`}>
       <div>
@@ -562,15 +570,15 @@ const TransactionTable = ({ data, title, isIncome, onDelete, onEdit, categories,
           {isIncome ? <ArrowUpCircle size={18}/> : <ArrowDownCircle size={18}/>} {title}
         </h3>
         <span className={`text-xs px-2 py-1 rounded-full font-bold ${isIncome ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
-          Total: {formatRupiah(data.reduce((acc: any, curr: any) => acc + curr.amount, 0))}
+          Total: {formatRupiah(data.reduce((acc, curr) => acc + curr.amount, 0))}
         </span>
       </div>
       
-      {categories && (
+      {categories && onFilterChange && (
         <select value={filterValue} onChange={(e) => onFilterChange(e.target.value)}
           className={`p-2 text-xs border rounded-lg outline-none focus:ring-2 bg-white/80 ${isIncome ? 'border-emerald-200 focus:ring-emerald-500' : 'border-rose-200 focus:ring-rose-500'}`}>
           <option value="Semua">Semua Kategori</option>
-          {categories.map((c: string) => <option key={c} value={c}>{c}</option>)}
+          {categories.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
       )}
     </div>
@@ -588,7 +596,7 @@ const TransactionTable = ({ data, title, isIncome, onDelete, onEdit, categories,
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {data.map((t: any) => (
+            {data.map((t) => (
               <tr key={t.id} className="hover:bg-slate-50 transition">
                 <td className="p-3 text-sm text-slate-600 whitespace-nowrap">{new Date(t.date).toLocaleDateString('id-ID', {day: 'numeric', month:'short'})}</td>
                 <td className="p-3 text-sm font-medium text-slate-800">{t.description}</td>
@@ -612,7 +620,14 @@ const TransactionTable = ({ data, title, isIncome, onDelete, onEdit, categories,
   </div>
 );
 
-const BudgetCard = ({ title, currentExpense, budget, setBudget }: any) => {
+interface BudgetCardProps {
+  title?: string;
+  currentExpense: number;
+  budget: number;
+  setBudget: (budget: number) => void;
+}
+
+const BudgetCard = ({ title, currentExpense, budget, setBudget }: BudgetCardProps) => {
   const [isEditing, setIsEditing] = useState(false);
   const [temp, setTemp] = useState('');
   const percent = budget > 0 ? Math.min((currentExpense / budget) * 100, 100) : 0;
@@ -649,7 +664,14 @@ const BudgetCard = ({ title, currentExpense, budget, setBudget }: any) => {
   );
 };
 
-const CategoryBudgetRow = ({ category, spent, budget, onUpdate }: any) => {
+interface CategoryBudgetRowProps {
+  category: string;
+  spent: number;
+  budget: number;
+  onUpdate: (amount: number) => void;
+}
+
+const CategoryBudgetRow = ({ category, spent, budget, onUpdate }: CategoryBudgetRowProps) => {
   const [isEditing, setIsEditing] = useState(false);
   const [temp, setTemp] = useState(budget.toString());
   const percent = budget > 0 ? Math.min((spent / budget) * 100, 100) : 0;
