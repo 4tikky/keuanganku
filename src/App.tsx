@@ -8,7 +8,7 @@ import {
   TrendingUp, 
   TrendingDown, 
   Download, 
-  Search, 
+  Search,  
   Trash2, 
   Pencil, 
   Save, 
@@ -18,6 +18,10 @@ import {
   AlertCircle, 
   PieChart,
   Settings,
+  LogOut,
+  Lock,
+  User,
+  KeyRound
 } from 'lucide-react';
 
 // --- TIPE DATA ---
@@ -30,10 +34,16 @@ type Transaction = {
   category: string;
   amount: number;
   type: 'income' | 'expense';
-  priority: PriorityLevel; // Field baru
+  priority: PriorityLevel; 
 };
 
 type ViewMode = 'dashboard' | 'transactions' | 'add' | 'analysis';
+
+// Tipe Data User untuk Auth Sederhana
+type UserAccount = {
+  name: string;
+  pin: string;
+};
 
 // --- KONSTANTA ---
 const EXPENSE_CATEGORIES = ['Makanan', 'Transportasi', 'Belanja', 'Tagihan', 'Hiburan', 'Kesehatan', 'Lainnya'];
@@ -59,14 +69,20 @@ const formatRupiah = (number: number) => {
 };
 
 export default function App() {
-  // --- GLOBAL STATE ---
+  // --- AUTH STATE ---
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [userAccount, setUserAccount] = useState<UserAccount | null>(() => {
+    const saved = localStorage.getItem('financeUser');
+    return saved ? JSON.parse(saved) : null;
+  });
+
+  // --- APP STATE ---
   const [activeTab, setActiveTab] = useState<ViewMode>('dashboard');
   
   const [transactions, setTransactions] = useState<Transaction[]>(() => {
     const saved = localStorage.getItem('financeData');
     if (saved) {
       const parsed = JSON.parse(saved);
-      // Migrasi data lama yang belum punya priority
       return parsed.map((t: Transaction) => ({ ...t, priority: t.priority || 'Sedang' }));
     }
     return [
@@ -75,32 +91,54 @@ export default function App() {
     ];
   });
 
-  // Global Budget (Total)
   const [monthlyBudget, setMonthlyBudget] = useState<number>(() => {
     const saved = localStorage.getItem('monthlyBudget');
     return saved ? parseFloat(saved) : 5000000;
   });
 
-  // Category Budgets (Per Kategori)
   const [categoryBudgets, setCategoryBudgets] = useState<Record<string, number>>(() => {
     const saved = localStorage.getItem('categoryBudgets');
-    // Default budget 0 (artinya tidak diset)
     return saved ? JSON.parse(saved) : {};
   });
 
-  // State untuk Edit (Shared antara List dan Form)
   const [editData, setEditData] = useState<Transaction | null>(null);
-
-  // Global Filters (Agar user tidak perlu set ulang saat pindah menu)
   const [filterMonth, setFilterMonth] = useState(new Date().getMonth().toString());
   const [filterYear, setFilterYear] = useState(new Date().getFullYear().toString());
 
   // --- EFFECT ---
-  useEffect(() => { localStorage.setItem('financeData', JSON.stringify(transactions)); }, [transactions]);
-  useEffect(() => { localStorage.setItem('monthlyBudget', monthlyBudget.toString()); }, [monthlyBudget]);
-  useEffect(() => { localStorage.setItem('categoryBudgets', JSON.stringify(categoryBudgets)); }, [categoryBudgets]);
+  useEffect(() => { if (isAuthenticated) localStorage.setItem('financeData', JSON.stringify(transactions)); }, [transactions, isAuthenticated]);
+  useEffect(() => { if (isAuthenticated) localStorage.setItem('monthlyBudget', monthlyBudget.toString()); }, [monthlyBudget, isAuthenticated]);
+  useEffect(() => { if (isAuthenticated) localStorage.setItem('categoryBudgets', JSON.stringify(categoryBudgets)); }, [categoryBudgets, isAuthenticated]);
+  
+  // Simpan User Account
+  useEffect(() => {
+    if (userAccount) {
+      localStorage.setItem('financeUser', JSON.stringify(userAccount));
+    }
+  }, [userAccount]);
 
-  // --- DATA PROCESSING (Global Calculation) ---
+  // --- AUTH HANDLERS ---
+  const handleLogin = (pin: string) => {
+    if (userAccount && userAccount.pin === pin) {
+      setIsAuthenticated(true);
+    } else {
+      alert("PIN Salah!");
+    }
+  };
+
+  const handleRegister = (name: string, pin: string) => {
+    const newUser = { name, pin };
+    setUserAccount(newUser);
+    setIsAuthenticated(true);
+    alert(`Halo ${name}, akun berhasil dibuat!`);
+  };
+
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    setActiveTab('dashboard');
+  };
+
+  // --- DATA PROCESSING ---
   const availableYears = useMemo(() => {
     const years = new Set(transactions.map(t => new Date(t.date).getFullYear()));
     years.add(new Date().getFullYear());
@@ -128,25 +166,18 @@ export default function App() {
 
   const startEdit = (t: Transaction) => {
     setEditData(t);
-    setActiveTab('add'); // Pindah ke tab form
+    setActiveTab('add');
   };
 
   const updateCategoryBudget = (category: string, amount: number) => {
-    // Validasi: Hitung total budget kategori LAINNYA dulu
     const otherCategoriesTotal = Object.entries(categoryBudgets)
       .filter(([key]) => key !== category)
       .reduce((acc, [, val]) => acc + val, 0);
     
-    // Cek apakah input baru akan membuat total melebihi Budget Bulanan
     if (otherCategoriesTotal + amount > monthlyBudget) {
-      alert(
-        `Gagal menyimpan!\n\n` +
-        `Total anggaran kategori tidak boleh melebihi Anggaran Total (${formatRupiah(monthlyBudget)}).\n` +
-        `Sisa yang tersedia untuk dialokasikan: ${formatRupiah(Math.max(0, monthlyBudget - otherCategoriesTotal))}`
-      );
-      return; // Batalkan update
+      alert(`Gagal! Total anggaran kategori (${formatRupiah(otherCategoriesTotal + amount)}) melebihi Anggaran Total (${formatRupiah(monthlyBudget)}).`);
+      return;
     }
-
     setCategoryBudgets(prev => ({ ...prev, [category]: amount }));
   };
 
@@ -164,310 +195,12 @@ export default function App() {
     document.body.removeChild(link);
   };
 
-  // --- SUB-COMPONENTS (VIEWS) ---
+  // --- AUTH VIEW (LOGIN / REGISTER) ---
+  if (!isAuthenticated) {
+    return <AuthScreen userAccount={userAccount} onLogin={handleLogin} onRegister={handleRegister} />;
+  }
 
-  // 1. DASHBOARD VIEW
-  const DashboardView = () => (
-    <div className="space-y-6 animate-in fade-in duration-500">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* Card Saldo */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="p-2 bg-blue-100 rounded-lg"><Wallet className="w-5 h-5 text-blue-600" /></div>
-            <span className="text-slate-500 font-medium text-sm">Sisa Saldo</span>
-          </div>
-          <div className={`text-2xl font-bold ${balance < 0 ? 'text-red-600' : 'text-slate-900'}`}>{formatRupiah(balance)}</div>
-        </div>
-        {/* Card Pemasukan */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="p-2 bg-emerald-100 rounded-lg"><TrendingUp className="w-5 h-5 text-emerald-600" /></div>
-            <span className="text-slate-500 font-medium text-sm">Total Pemasukan</span>
-          </div>
-          <div className="text-2xl font-bold text-emerald-600">{formatRupiah(totalIncome)}</div>
-        </div>
-        {/* Card Pengeluaran */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="p-2 bg-rose-100 rounded-lg"><TrendingDown className="w-5 h-5 text-rose-600" /></div>
-            <span className="text-slate-500 font-medium text-sm">Total Pengeluaran</span>
-          </div>
-          <div className="text-2xl font-bold text-rose-600">{formatRupiah(totalExpense)}</div>
-        </div>
-      </div>
-
-      {/* Budget Section (Global) */}
-      <BudgetCard 
-        title="Target Anggaran Total"
-        currentExpense={totalExpense} 
-        budget={monthlyBudget} 
-        setBudget={setMonthlyBudget} 
-      />
-      
-      {/* Empty State Helper */}
-      {transactions.length === 0 && (
-        <div className="bg-blue-50 border border-blue-100 rounded-xl p-8 text-center">
-          <h3 className="text-blue-800 font-semibold text-lg mb-2">Selamat Datang di Keuanganku!</h3>
-          <p className="text-blue-600 mb-4">Mulai kelola keuanganmu dengan mencatat transaksi pertama.</p>
-          <button onClick={() => setActiveTab('add')} className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition">
-            Tambah Transaksi Baru
-          </button>
-        </div>
-      )}
-    </div>
-  );
-
-  // 2. FORM VIEW (ADD/EDIT)
-  const FormView = () => {
-    // Local state for form, initialized with editData if available
-    const [formData, setFormData] = useState({
-      date: editData?.date || new Date().toISOString().split('T')[0],
-      description: editData?.description || '',
-      category: editData?.category || 'Makanan',
-      amount: editData?.amount?.toString() || '',
-      type: editData?.type || 'expense' as 'income' | 'expense',
-      priority: editData?.priority || 'Sedang' as PriorityLevel
-    });
-
-    const handleSubmit = (e: React.FormEvent) => {
-      e.preventDefault();
-      if (!formData.description || !formData.amount) return;
-
-      const payload: Transaction = {
-        id: editData ? editData.id : Date.now(),
-        date: formData.date,
-        description: formData.description,
-        category: formData.category,
-        amount: parseFloat(formData.amount),
-        type: formData.type,
-        priority: formData.priority
-      };
-
-      if (editData) {
-        setTransactions(prev => prev.map(t => t.id === editData.id ? payload : t));
-        setEditData(null);
-      } else {
-        setTransactions(prev => [payload, ...prev]);
-      }
-      
-      // Reset or redirect
-      alert(editData ? 'Data berhasil diperbarui!' : 'Data berhasil ditambahkan!');
-      if (editData) setActiveTab('transactions'); // Kembali ke list setelah edit
-      else {
-        // Reset form for next input (keep priority default)
-        setFormData({ ...formData, description: '', amount: '', priority: 'Sedang' });
-      }
-    };
-
-    return (
-      <div className="max-w-2xl mx-auto bg-white p-8 rounded-xl shadow-sm border border-slate-200 animate-in slide-in-from-bottom-4 duration-500">
-        <h2 className="text-xl font-bold mb-6 flex items-center gap-2 text-slate-800 border-b pb-4">
-          {editData ? <Pencil className="w-6 h-6 text-blue-600" /> : <PlusCircle className="w-6 h-6 text-blue-600" />}
-          {editData ? 'Edit Transaksi' : 'Tambah Transaksi Baru'}
-        </h2>
-        
-        <form onSubmit={handleSubmit} className="space-y-5">
-          {/* Tipe Transaksi Switcher */}
-          <div className="grid grid-cols-2 gap-4 p-1 bg-slate-100 rounded-xl">
-             <button type="button" onClick={() => setFormData({...formData, type: 'income', category: 'Gaji'})}
-              className={`py-3 rounded-lg text-sm font-bold transition flex items-center justify-center gap-2 ${formData.type === 'income' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
-              <ArrowUpCircle className="w-4 h-4"/> Pemasukan
-            </button>
-            <button type="button" onClick={() => setFormData({...formData, type: 'expense', category: 'Makanan'})}
-              className={`py-3 rounded-lg text-sm font-bold transition flex items-center justify-center gap-2 ${formData.type === 'expense' ? 'bg-white text-rose-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
-              <ArrowDownCircle className="w-4 h-4"/> Pengeluaran
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            <div>
-              <label className="block text-sm font-medium text-slate-600 mb-1">Tanggal</label>
-              <input type="date" required value={formData.date}
-                onChange={(e) => setFormData({...formData, date: e.target.value})}
-                className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-600 mb-1">Kategori</label>
-              <select value={formData.category} onChange={(e) => setFormData({...formData, category: e.target.value})}
-                className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none bg-white">
-                {(formData.type === 'expense' ? EXPENSE_CATEGORIES : INCOME_CATEGORIES).map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
-          </div>
-
-          <div>
-             <label className="block text-sm font-medium text-slate-600 mb-1">Prioritas</label>
-             <div className="flex gap-2">
-                {PRIORITIES.map(p => (
-                  <button
-                    key={p}
-                    type="button"
-                    onClick={() => setFormData({...formData, priority: p})}
-                    className={`flex-1 py-2 rounded-lg text-sm border font-medium transition ${formData.priority === p ? PRIORITY_STYLES[p] + ' ring-2 ring-offset-1 ring-slate-200' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}`}
-                  >
-                    {p}
-                  </button>
-                ))}
-             </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-600 mb-1">Keterangan</label>
-            <input type="text" required placeholder="Contoh: Makan Siang, Beli Bensin..." value={formData.description}
-              onChange={(e) => setFormData({...formData, description: e.target.value})}
-              className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none" />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-600 mb-1">Nominal (Rp)</label>
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">Rp</span>
-              <input type="number" required min="1" placeholder="0" value={formData.amount}
-                onChange={(e) => setFormData({...formData, amount: e.target.value})}
-                className="w-full pl-10 p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none font-semibold text-slate-700" />
-            </div>
-          </div>
-
-          <div className="flex gap-3 pt-4">
-            {editData && (
-              <button type="button" onClick={() => { setEditData(null); setActiveTab('transactions'); }}
-                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 rounded-lg transition">
-                Batal
-              </button>
-            )}
-            <button type="submit"
-              className={`flex-1 flex items-center justify-center gap-2 font-bold py-3 rounded-lg transition shadow-lg text-white ${editData ? 'bg-blue-600 hover:bg-blue-700' : 'bg-blue-600 hover:bg-blue-700'}`}>
-              {editData ? <Save className="w-5 h-5"/> : <PlusCircle className="w-5 h-5"/>}
-              {editData ? 'Update Data' : 'Simpan Data'}
-            </button>
-          </div>
-        </form>
-      </div>
-    );
-  };
-
-  // 3. TRANSACTIONS LIST VIEW
-  const TransactionsView = () => {
-    const [search, setSearch] = useState('');
-    // Split filters
-    const [incomeFilter, setIncomeFilter] = useState('Semua');
-    const [expenseFilter, setExpenseFilter] = useState('Semua');
-
-    // Filter logic per list
-    const incomeList = filteredByDate
-      .filter(t => t.type === 'income')
-      .filter(t => t.description.toLowerCase().includes(search.toLowerCase()))
-      .filter(t => incomeFilter === 'Semua' || t.category === incomeFilter);
-
-    const expenseList = filteredByDate
-      .filter(t => t.type === 'expense')
-      .filter(t => t.description.toLowerCase().includes(search.toLowerCase()))
-      .filter(t => expenseFilter === 'Semua' || t.category === expenseFilter);
-
-    return (
-      <div className="space-y-6 animate-in fade-in duration-500">
-        {/* Search Bar only - Filter moved to tables */}
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input type="text" placeholder="Cari transaksi berdasarkan keterangan..." value={search} onChange={e => setSearch(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
-          </div>
-        </div>
-
-        <TransactionTable 
-          data={incomeList} 
-          title="Pemasukan" 
-          isIncome={true} 
-          onDelete={handleDelete} 
-          onEdit={startEdit}
-          categories={INCOME_CATEGORIES}
-          filterValue={incomeFilter}
-          onFilterChange={setIncomeFilter}
-        />
-        
-        <TransactionTable 
-          data={expenseList} 
-          title="Pengeluaran" 
-          isIncome={false} 
-          onDelete={handleDelete} 
-          onEdit={startEdit}
-          categories={EXPENSE_CATEGORIES}
-          filterValue={expenseFilter}
-          onFilterChange={setExpenseFilter}
-        />
-      </div>
-    );
-  };
-
-  // 4. ANALYSIS VIEW
-  const AnalysisView = () => {
-    // Group Expense by Category
-    const expenseGroups = filteredByDate.filter(t => t.type === 'expense').reduce((acc, curr) => {
-      acc[curr.category] = (acc[curr.category] || 0) + curr.amount;
-      return acc;
-    }, {} as Record<string, number>);
-    
-    const chartData = Object.entries(expenseGroups)
-      .map(([cat, amount]) => ({ category: cat, amount }))
-      .sort((a, b) => b.amount - a.amount);
-
-    // Hitung total alokasi
-    const totalAllocated = Object.values(categoryBudgets).reduce((a, b) => a + b, 0);
-    const unallocated = monthlyBudget - totalAllocated;
-
-    return (
-      <div className="space-y-6 animate-in fade-in duration-500">
-        <BudgetCard 
-          title="Target Anggaran Total"
-          currentExpense={totalExpense} 
-          budget={monthlyBudget} 
-          setBudget={setMonthlyBudget} 
-        />
-        
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Chart */}
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-             <h3 className="font-bold text-slate-800 mb-6 flex items-center gap-2">
-               <PieChart className="w-5 h-5 text-purple-600"/> Grafik Pengeluaran
-             </h3>
-             <DonutChart data={chartData} />
-          </div>
-
-          {/* Category Budgets */}
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-             <div className="flex justify-between items-center mb-6">
-               <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                 <Target className="w-5 h-5 text-indigo-600"/> Anggaran per Kategori
-               </h3>
-               {/* Indikator Sisa Alokasi */}
-               <span className={`text-xs font-medium px-2 py-1 rounded border ${unallocated < 0 ? 'bg-red-50 text-red-700 border-red-100' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>
-                  Sisa Alokasi: {formatRupiah(Math.max(0, unallocated))}
-               </span>
-             </div>
-
-             <div className="space-y-6 max-h-[400px] overflow-y-auto pr-2">
-                {EXPENSE_CATEGORIES.map(cat => {
-                   const spent = expenseGroups[cat] || 0;
-                   const budget = categoryBudgets[cat] || 0;
-                   return (
-                     <CategoryBudgetRow 
-                        key={cat} 
-                        category={cat} 
-                        spent={spent} 
-                        budget={budget} 
-                        onUpdate={(val) => updateCategoryBudget(cat, val)} 
-                     />
-                   );
-                })}
-             </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  // --- MAIN LAYOUT ---
+  // --- MAIN APP VIEW ---
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col md:flex-row font-sans text-slate-800">
       
@@ -477,6 +210,9 @@ export default function App() {
           <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
             <Wallet className="w-8 h-8 text-blue-600" /> Keuanganku
           </h1>
+          <p className="text-xs text-slate-500 mt-2 flex items-center gap-1">
+             <User size={12}/> Halo, {userAccount?.name}
+          </p>
         </div>
         
         <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
@@ -486,15 +222,18 @@ export default function App() {
           <MenuButton active={activeTab === 'analysis'} onClick={() => setActiveTab('analysis')} icon={<BarChart3 size={20}/>} label="Analisis & Budget" />
         </nav>
 
-        <div className="p-4 border-t border-slate-100 bg-slate-50">
-          <p className="text-xs text-slate-400 text-center">© 2024 Financial App v2.0</p>
+        <div className="p-4 border-t border-slate-100 bg-slate-50 space-y-2">
+          <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg transition">
+             <LogOut size={18} /> Keluar (Kunci)
+          </button>
+          <p className="text-xs text-slate-400 text-center">© 2024 Financial App v2.1</p>
         </div>
       </aside>
 
       {/* MAIN CONTENT AREA */}
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
         
-        {/* Top Header (Global Filters) */}
+        {/* Top Header */}
         <header className="bg-white border-b border-slate-200 p-4 md:px-8 flex flex-col md:flex-row justify-between items-center gap-4 sticky top-0 z-10 shadow-sm">
           <div>
             <h2 className="text-lg font-bold text-slate-800">
@@ -509,7 +248,6 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-2 w-full md:w-auto">
-             {/* Global Date Filters */}
              <select value={filterMonth} onChange={(e) => setFilterMonth(e.target.value)}
                 className="p-2 border border-slate-300 rounded-lg text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500">
                 <option value="Semua">Semua Bulan</option>
@@ -529,24 +267,330 @@ export default function App() {
         {/* Content Wrapper */}
         <div className="flex-1 overflow-y-auto p-4 md:p-8">
           <div className="max-w-5xl mx-auto">
-             {activeTab === 'dashboard' && <DashboardView />}
-             {activeTab === 'transactions' && <TransactionsView />}
-             {activeTab === 'add' && <FormView />}
-             {activeTab === 'analysis' && <AnalysisView />}
+             {activeTab === 'dashboard' && <DashboardView 
+                balance={balance} totalIncome={totalIncome} totalExpense={totalExpense} 
+                monthlyBudget={monthlyBudget} setMonthlyBudget={setMonthlyBudget} 
+                hasTransactions={transactions.length > 0} 
+                onAddClick={() => setActiveTab('add')}
+             />}
+             
+             {activeTab === 'transactions' && <TransactionsView 
+                transactions={filteredByDate} 
+                onDelete={handleDelete} 
+                onEdit={startEdit} 
+             />}
+             
+             {activeTab === 'add' && <FormView 
+                editData={editData} 
+                onSave={(payload: Transaction) => {
+                   if (editData) {
+                     setTransactions(prev => prev.map(t => t.id === editData.id ? payload : t));
+                     setEditData(null);
+                   } else {
+                     setTransactions(prev => [payload, ...prev]);
+                   }
+                   alert('Data berhasil disimpan!');
+                   if(editData) setActiveTab('transactions');
+                }}
+                onCancel={() => { setEditData(null); setActiveTab('transactions'); }}
+             />}
+             
+             {activeTab === 'analysis' && <AnalysisView 
+                transactions={filteredByDate}
+                totalExpense={totalExpense}
+                monthlyBudget={monthlyBudget}
+                setMonthlyBudget={setMonthlyBudget}
+                categoryBudgets={categoryBudgets}
+                updateCategoryBudget={updateCategoryBudget}
+             />}
           </div>
         </div>
-
       </main>
     </div>
   );
 }
 
-// --- SMALL REUSABLE COMPONENTS ---
+// --- SUB COMPONENTS (VIEWS) ---
+
+const AuthScreen = ({ userAccount, onLogin, onRegister }: { userAccount: UserAccount | null, onLogin: (p: string) => void, onRegister: (n: string, p: string) => void }) => {
+  const [name, setName] = useState('');
+  const [pin, setPin] = useState('');
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (userAccount) {
+      onLogin(pin);
+    } else {
+      if (name && pin.length >= 4) onRegister(name, pin);
+      else alert('Nama wajib diisi dan PIN minimal 4 angka');
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
+      <div className="bg-white w-full max-w-md p-8 rounded-2xl shadow-lg text-center">
+        <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-6">
+          <Lock size={32} />
+        </div>
+        <h1 className="text-2xl font-bold text-slate-800 mb-2">
+          {userAccount ? `Selamat Datang, ${userAccount.name}!` : 'Buat Akun Baru'}
+        </h1>
+        <p className="text-slate-500 mb-8">
+          {userAccount ? 'Masukkan PIN untuk mengakses data keuangan Anda.' : 'Amankan data keuangan Anda dengan PIN rahasia.'}
+        </p>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {!userAccount && (
+            <div className="text-left">
+              <label className="block text-sm font-medium text-slate-600 mb-1">Nama Panggilan</label>
+              <div className="relative">
+                <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18}/>
+                <input type="text" value={name} onChange={e => setName(e.target.value)} required 
+                  className="w-full pl-10 p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Contoh: Budi" />
+              </div>
+            </div>
+          )}
+          <div className="text-left">
+            <label className="block text-sm font-medium text-slate-600 mb-1">PIN Keamanan</label>
+            <div className="relative">
+              <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18}/>
+              <input type="password" value={pin} onChange={e => setPin(e.target.value)} required maxLength={6}
+                className="w-full pl-10 p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-mono text-lg tracking-widest" placeholder="******" />
+            </div>
+          </div>
+          <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition shadow-md mt-4">
+            {userAccount ? 'Buka Kunci' : 'Buat & Masuk'}
+          </button>
+        </form>
+        <p className="text-xs text-slate-400 mt-6">Data tersimpan aman di perangkat ini (Local Storage).</p>
+      </div>
+    </div>
+  );
+};
+
+// --- INTERFACES FOR VIEWS ---
+
+interface DashboardViewProps {
+  balance: number;
+  totalIncome: number;
+  totalExpense: number;
+  monthlyBudget: number;
+  setMonthlyBudget: (budget: number) => void;
+  hasTransactions: boolean;
+  onAddClick: () => void;
+}
+
+const DashboardView = ({ balance, totalIncome, totalExpense, monthlyBudget, setMonthlyBudget, hasTransactions, onAddClick }: DashboardViewProps) => (
+  <div className="space-y-6 animate-in fade-in duration-500">
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+        <div className="flex items-center gap-3 mb-2">
+          <div className="p-2 bg-blue-100 rounded-lg"><Wallet className="w-5 h-5 text-blue-600" /></div>
+          <span className="text-slate-500 font-medium text-sm">Sisa Saldo</span>
+        </div>
+        <div className={`text-2xl font-bold ${balance < 0 ? 'text-red-600' : 'text-slate-900'}`}>{formatRupiah(balance)}</div>
+      </div>
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+        <div className="flex items-center gap-3 mb-2">
+          <div className="p-2 bg-emerald-100 rounded-lg"><TrendingUp className="w-5 h-5 text-emerald-600" /></div>
+          <span className="text-slate-500 font-medium text-sm">Total Pemasukan</span>
+        </div>
+        <div className="text-2xl font-bold text-emerald-600">{formatRupiah(totalIncome)}</div>
+      </div>
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+        <div className="flex items-center gap-3 mb-2">
+          <div className="p-2 bg-rose-100 rounded-lg"><TrendingDown className="w-5 h-5 text-rose-600" /></div>
+          <span className="text-slate-500 font-medium text-sm">Total Pengeluaran</span>
+        </div>
+        <div className="text-2xl font-bold text-rose-600">{formatRupiah(totalExpense)}</div>
+      </div>
+    </div>
+
+    <BudgetCard title="Target Anggaran Total" currentExpense={totalExpense} budget={monthlyBudget} setBudget={setMonthlyBudget} />
+    
+    {!hasTransactions && (
+      <div className="bg-blue-50 border border-blue-100 rounded-xl p-8 text-center">
+        <h3 className="text-blue-800 font-semibold text-lg mb-2">Selamat Datang di Keuanganku!</h3>
+        <p className="text-blue-600 mb-4">Mulai kelola keuanganmu dengan mencatat transaksi pertama.</p>
+        <button onClick={onAddClick} className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition">
+          Tambah Transaksi Baru
+        </button>
+      </div>
+    )}
+  </div>
+);
+
+interface FormViewProps {
+  editData: Transaction | null;
+  onSave: (transaction: Transaction) => void;
+  onCancel: () => void;
+}
+
+const FormView = ({ editData, onSave, onCancel }: FormViewProps) => {
+  const [formData, setFormData] = useState({
+    date: editData?.date || new Date().toISOString().split('T')[0],
+    description: editData?.description || '',
+    category: editData?.category || 'Makanan',
+    amount: editData?.amount?.toString() || '',
+    type: editData?.type || 'expense' as 'income' | 'expense',
+    priority: editData?.priority || 'Sedang' as PriorityLevel
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.description || !formData.amount) return;
+    const payload: Transaction = {
+      id: editData ? editData.id : Date.now(),
+      date: formData.date, description: formData.description, category: formData.category,
+      amount: parseFloat(formData.amount), type: formData.type, priority: formData.priority
+    };
+    onSave(payload);
+  };
+
+  return (
+    <div className="max-w-2xl mx-auto bg-white p-8 rounded-xl shadow-sm border border-slate-200 animate-in slide-in-from-bottom-4 duration-500">
+      <h2 className="text-xl font-bold mb-6 flex items-center gap-2 text-slate-800 border-b pb-4">
+        {editData ? <Pencil className="w-6 h-6 text-blue-600" /> : <PlusCircle className="w-6 h-6 text-blue-600" />}
+        {editData ? 'Edit Transaksi' : 'Tambah Transaksi Baru'}
+      </h2>
+      <form onSubmit={handleSubmit} className="space-y-5">
+        <div className="grid grid-cols-2 gap-4 p-1 bg-slate-100 rounded-xl">
+            <button type="button" onClick={() => setFormData({...formData, type: 'income', category: 'Gaji'})}
+            className={`py-3 rounded-lg text-sm font-bold transition flex items-center justify-center gap-2 ${formData.type === 'income' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+            <ArrowUpCircle className="w-4 h-4"/> Pemasukan
+          </button>
+          <button type="button" onClick={() => setFormData({...formData, type: 'expense', category: 'Makanan'})}
+            className={`py-3 rounded-lg text-sm font-bold transition flex items-center justify-center gap-2 ${formData.type === 'expense' ? 'bg-white text-rose-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+            <ArrowDownCircle className="w-4 h-4"/> Pengeluaran
+          </button>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1">Tanggal</label>
+            <input type="date" required value={formData.date} onChange={(e) => setFormData({...formData, date: e.target.value})}
+              className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1">Kategori</label>
+            <select value={formData.category} onChange={(e) => setFormData({...formData, category: e.target.value})}
+              className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none bg-white">
+              {(formData.type === 'expense' ? EXPENSE_CATEGORIES : INCOME_CATEGORIES).map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+        </div>
+        <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1">Prioritas</label>
+            <div className="flex gap-2">
+              {PRIORITIES.map(p => (
+                <button key={p} type="button" onClick={() => setFormData({...formData, priority: p})}
+                  className={`flex-1 py-2 rounded-lg text-sm border font-medium transition ${formData.priority === p ? PRIORITY_STYLES[p] + ' ring-2 ring-offset-1 ring-slate-200' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
+                  {p}
+                </button>
+              ))}
+            </div>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-slate-600 mb-1">Keterangan</label>
+          <input type="text" required placeholder="Contoh: Makan Siang..." value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})}
+            className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none" />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-slate-600 mb-1">Nominal (Rp)</label>
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">Rp</span>
+            <input type="number" required min="1" placeholder="0" value={formData.amount} onChange={(e) => setFormData({...formData, amount: e.target.value})}
+              className="w-full pl-10 p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none font-semibold text-slate-700" />
+          </div>
+        </div>
+        <div className="flex gap-3 pt-4">
+          {editData && (
+            <button type="button" onClick={onCancel} className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 rounded-lg transition">Batal</button>
+          )}
+          <button type="submit" className={`flex-1 flex items-center justify-center gap-2 font-bold py-3 rounded-lg transition shadow-lg text-white ${editData ? 'bg-blue-600 hover:bg-blue-700' : 'bg-blue-600 hover:bg-blue-700'}`}>
+            {editData ? <Save className="w-5 h-5"/> : <PlusCircle className="w-5 h-5"/>} {editData ? 'Update Data' : 'Simpan Data'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+};
+
+interface TransactionsViewProps {
+  transactions: Transaction[];
+  onDelete: (id: number) => void;
+  onEdit: (transaction: Transaction) => void;
+}
+
+const TransactionsView = ({ transactions, onDelete, onEdit }: TransactionsViewProps) => {
+  const [search, setSearch] = useState('');
+  const [incomeFilter, setIncomeFilter] = useState('Semua');
+  const [expenseFilter, setExpenseFilter] = useState('Semua');
+
+  const incomeList = transactions.filter((t) => t.type === 'income' && t.description.toLowerCase().includes(search.toLowerCase()) && (incomeFilter === 'Semua' || t.category === incomeFilter));
+  const expenseList = transactions.filter((t) => t.type === 'expense' && t.description.toLowerCase().includes(search.toLowerCase()) && (expenseFilter === 'Semua' || t.category === expenseFilter));
+
+  return (
+    <div className="space-y-6 animate-in fade-in duration-500">
+      <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <input type="text" placeholder="Cari transaksi..." value={search} onChange={e => setSearch(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
+        </div>
+      </div>
+      <TransactionTable data={incomeList} title="Pemasukan" isIncome={true} onDelete={onDelete} onEdit={onEdit} categories={INCOME_CATEGORIES} filterValue={incomeFilter} onFilterChange={setIncomeFilter} />
+      <TransactionTable data={expenseList} title="Pengeluaran" isIncome={false} onDelete={onDelete} onEdit={onEdit} categories={EXPENSE_CATEGORIES} filterValue={expenseFilter} onFilterChange={setExpenseFilter} />
+    </div>
+  );
+};
+
+interface AnalysisViewProps {
+  transactions: Transaction[];
+  totalExpense: number;
+  monthlyBudget: number;
+  setMonthlyBudget: (budget: number) => void;
+  categoryBudgets: Record<string, number>;
+  updateCategoryBudget: (category: string, amount: number) => void;
+}
+
+const AnalysisView = ({ transactions, totalExpense, monthlyBudget, setMonthlyBudget, categoryBudgets, updateCategoryBudget }: AnalysisViewProps) => {
+  const expenseGroups = transactions.filter((t) => t.type === 'expense').reduce((acc: Record<string, number>, curr) => {
+    acc[curr.category] = (acc[curr.category] || 0) + curr.amount;
+    return acc;
+  }, {} as Record<string, number>);
+  
+  const chartData = Object.entries(expenseGroups).map(([cat, amount]) => ({ category: cat, amount })).sort((a, b) => b.amount - a.amount);
+  const totalAllocated = Object.values(categoryBudgets).reduce((a, b) => a + b, 0);
+  const unallocated = monthlyBudget - totalAllocated;
+
+  return (
+    <div className="space-y-6 animate-in fade-in duration-500">
+      <BudgetCard title="Target Anggaran Total" currentExpense={totalExpense} budget={monthlyBudget} setBudget={setMonthlyBudget} />
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+           <h3 className="font-bold text-slate-800 mb-6 flex items-center gap-2"><PieChart className="w-5 h-5 text-purple-600"/> Grafik Pengeluaran</h3>
+           <DonutChart data={chartData} />
+        </div>
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+           <div className="flex justify-between items-center mb-6">
+             <h3 className="font-bold text-slate-800 flex items-center gap-2"><Target className="w-5 h-5 text-indigo-600"/> Anggaran per Kategori</h3>
+             <span className={`text-xs font-medium px-2 py-1 rounded border ${unallocated < 0 ? 'bg-red-50 text-red-700 border-red-100' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>Sisa Alokasi: {formatRupiah(Math.max(0, unallocated))}</span>
+           </div>
+           <div className="space-y-6 max-h-[400px] overflow-y-auto pr-2">
+              {EXPENSE_CATEGORIES.map(cat => (
+                 <CategoryBudgetRow key={cat} category={cat} spent={expenseGroups[cat] || 0} budget={categoryBudgets[cat] || 0} onUpdate={(val: number) => updateCategoryBudget(cat, val)} />
+              ))}
+           </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// --- REUSABLE COMPONENTS ---
 
 const MenuButton = ({ active, onClick, icon, label }: { active: boolean, onClick: () => void, icon: React.ReactNode, label: string }) => (
-  <button onClick={onClick}
-    className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-all duration-200
-      ${active ? 'bg-blue-50 text-blue-700 shadow-sm border border-blue-100' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}>
+  <button onClick={onClick} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-all duration-200 ${active ? 'bg-blue-50 text-blue-700 shadow-sm border border-blue-100' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}>
     {icon} {label}
   </button>
 );
@@ -566,19 +610,13 @@ const TransactionTable = ({ data, title, isIncome, onDelete, onEdit, categories,
   <div className={`rounded-xl shadow-sm border overflow-hidden ${isIncome ? 'border-emerald-100 bg-emerald-50/30' : 'border-rose-100 bg-rose-50/30'}`}>
     <div className={`p-4 border-b flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 ${isIncome ? 'bg-emerald-50/50 border-emerald-100' : 'bg-rose-50/50 border-rose-100'}`}>
       <div>
-        <h3 className={`font-bold flex items-center gap-2 ${isIncome ? 'text-emerald-700' : 'text-rose-700'}`}>
-          {isIncome ? <ArrowUpCircle size={18}/> : <ArrowDownCircle size={18}/>} {title}
-        </h3>
-        <span className={`text-xs px-2 py-1 rounded-full font-bold ${isIncome ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
-          Total: {formatRupiah(data.reduce((acc, curr) => acc + curr.amount, 0))}
-        </span>
+        <h3 className={`font-bold flex items-center gap-2 ${isIncome ? 'text-emerald-700' : 'text-rose-700'}`}>{isIncome ? <ArrowUpCircle size={18}/> : <ArrowDownCircle size={18}/>} {title}</h3>
+        <span className={`text-xs px-2 py-1 rounded-full font-bold ${isIncome ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>Total: {formatRupiah(data.reduce((acc, curr) => acc + curr.amount, 0))}</span>
       </div>
-      
       {categories && onFilterChange && (
-        <select value={filterValue} onChange={(e) => onFilterChange(e.target.value)}
-          className={`p-2 text-xs border rounded-lg outline-none focus:ring-2 bg-white/80 ${isIncome ? 'border-emerald-200 focus:ring-emerald-500' : 'border-rose-200 focus:ring-rose-500'}`}>
+        <select value={filterValue} onChange={(e) => onFilterChange(e.target.value)} className={`p-2 text-xs border rounded-lg outline-none focus:ring-2 bg-white/80 ${isIncome ? 'border-emerald-200 focus:ring-emerald-500' : 'border-rose-200 focus:ring-rose-500'}`}>
           <option value="Semua">Semua Kategori</option>
-          {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+          {categories.map((c: string) => <option key={c} value={c}>{c}</option>)}
         </select>
       )}
     </div>
@@ -587,26 +625,17 @@ const TransactionTable = ({ data, title, isIncome, onDelete, onEdit, categories,
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className="bg-slate-50/50 text-slate-500 text-xs uppercase tracking-wider">
-              <th className="p-3 font-medium">Tanggal</th>
-              <th className="p-3 font-medium">Keterangan</th>
-              <th className="p-3 font-medium">Kategori</th>
-              <th className="p-3 font-medium text-right">Jumlah</th>
-              <th className="p-3 font-medium text-center">Prioritas</th>
-              <th className="p-3 font-medium text-center">Aksi</th>
+              <th className="p-3 font-medium">Tanggal</th><th className="p-3 font-medium">Keterangan</th><th className="p-3 font-medium">Kategori</th><th className="p-3 font-medium text-right">Jumlah</th><th className="p-3 font-medium text-center">Prioritas</th><th className="p-3 font-medium text-center">Aksi</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {data.map((t) => (
+            {data.map((t: Transaction) => (
               <tr key={t.id} className="hover:bg-slate-50 transition">
                 <td className="p-3 text-sm text-slate-600 whitespace-nowrap">{new Date(t.date).toLocaleDateString('id-ID', {day: 'numeric', month:'short'})}</td>
                 <td className="p-3 text-sm font-medium text-slate-800">{t.description}</td>
                 <td className="p-3 text-sm"><span className="px-2 py-1 rounded text-xs border bg-slate-50 text-slate-500">{t.category}</span></td>
                 <td className={`p-3 text-sm font-bold text-right whitespace-nowrap ${isIncome ? 'text-emerald-600' : 'text-rose-600'}`}>{formatRupiah(t.amount)}</td>
-                <td className="p-3 text-center">
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${PRIORITY_STYLES[t.priority] || 'bg-gray-100 text-gray-600 border-gray-200'}`}>
-                      {t.priority}
-                    </span>
-                </td>
+                <td className="p-3 text-center"><span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${PRIORITY_STYLES[t.priority as PriorityLevel] || 'bg-gray-100'}`}>{t.priority}</span></td>
                 <td className="p-3 text-center flex items-center justify-center gap-1">
                   <button onClick={() => onEdit(t)} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition"><Pencil size={16} /></button>
                   <button onClick={() => onDelete(t.id)} className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition"><Trash2 size={16} /></button>
@@ -632,7 +661,6 @@ const BudgetCard = ({ title, currentExpense, budget, setBudget }: BudgetCardProp
   const [temp, setTemp] = useState('');
   const percent = budget > 0 ? Math.min((currentExpense / budget) * 100, 100) : 0;
   const remaining = budget - currentExpense;
-  
   return (
     <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
       <div className="flex justify-between items-start mb-4">
@@ -642,7 +670,6 @@ const BudgetCard = ({ title, currentExpense, budget, setBudget }: BudgetCardProp
         </div>
         <button onClick={() => { setTemp(budget.toString()); setIsEditing(true); }} className="text-slate-400 hover:text-indigo-600"><Pencil size={16} /></button>
       </div>
-
       {isEditing ? (
         <div className="flex gap-2 mb-4">
           <input type="number" value={temp} onChange={e => setTemp(e.target.value)} className="w-full p-2 text-sm border rounded focus:ring-2 focus:ring-indigo-500 outline-none" autoFocus />
@@ -675,7 +702,6 @@ const CategoryBudgetRow = ({ category, spent, budget, onUpdate }: CategoryBudget
   const [isEditing, setIsEditing] = useState(false);
   const [temp, setTemp] = useState(budget.toString());
   const percent = budget > 0 ? Math.min((spent / budget) * 100, 100) : 0;
-  
   return (
     <div className="mb-4 last:mb-0">
        <div className="flex justify-between items-center mb-1">
@@ -686,8 +712,7 @@ const CategoryBudgetRow = ({ category, spent, budget, onUpdate }: CategoryBudget
           <div className="flex items-center gap-2">
              {isEditing ? (
                <div className="flex items-center gap-1">
-                 <input type="number" value={temp} onChange={e => setTemp(e.target.value)} 
-                   className="w-20 p-1 text-xs border rounded focus:ring-1 focus:ring-blue-500" />
+                 <input type="number" value={temp} onChange={e => setTemp(e.target.value)} className="w-20 p-1 text-xs border rounded focus:ring-1 focus:ring-blue-500" />
                  <button onClick={() => { onUpdate(parseFloat(temp) || 0); setIsEditing(false); }} className="text-emerald-600"><Save size={14}/></button>
                </div>
              ) : (
@@ -711,18 +736,21 @@ const DonutChart = ({ data }: { data: { category: string, amount: number }[] }) 
   if (data.length === 0) return <div className="text-center text-slate-400 py-8">Belum ada data pengeluaran.</div>;
   const total = data.reduce((acc, curr) => acc + curr.amount, 0);
   let cumulative = 0;
+  const segments = data.map(item => {
+    const percent = item.amount / total;
+    const start = cumulative;
+    cumulative += percent;
+    return { category: item.category, amount: item.amount, percent, start, end: cumulative };
+  });
   
   return (
     <div className="flex flex-col md:flex-row items-center gap-8 justify-center">
       <div className="relative w-48 h-48 flex-shrink-0">
         <svg viewBox="-1 -1 2 2" className="w-full h-full -rotate-90 transform">
-          {data.map((item) => {
-            const percent = item.amount / total;
-            const start = cumulative;
-            cumulative += percent;
-            const x1 = Math.cos(2 * Math.PI * start), y1 = Math.sin(2 * Math.PI * start);
-            const x2 = Math.cos(2 * Math.PI * cumulative), y2 = Math.sin(2 * Math.PI * cumulative);
-            const large = percent > 0.5 ? 1 : 0;
+          {segments.map((item) => {
+            const x1 = Math.cos(2 * Math.PI * item.start), y1 = Math.sin(2 * Math.PI * item.start);
+            const x2 = Math.cos(2 * Math.PI * item.end), y2 = Math.sin(2 * Math.PI * item.end);
+            const large = item.percent > 0.5 ? 1 : 0;
             const color = CATEGORY_COLORS[item.category] || '#94A3B8';
             return data.length === 1 ? <circle key={item.category} cx="0" cy="0" r="1" fill={color} /> : 
               <path key={item.category} d={`M 0 0 L ${x1} ${y1} A 1 1 0 ${large} 1 ${x2} ${y2} Z`} fill={color} stroke="white" strokeWidth="0.05"/>;
