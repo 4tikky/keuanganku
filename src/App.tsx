@@ -8,7 +8,8 @@ import {
   TrendingUp, 
   TrendingDown, 
   Download, 
-  Search,  
+  Search, 
+  Filter, 
   Trash2, 
   Pencil, 
   Save, 
@@ -17,11 +18,12 @@ import {
   Target, 
   AlertCircle, 
   PieChart,
-  Settings,
+  Settings, 
   LogOut,
   Lock,
   User,
-  KeyRound
+  KeyRound,
+  Menu // Icon menu untuk filter mobile
 } from 'lucide-react';
 
 // --- TIPE DATA ---
@@ -39,7 +41,6 @@ type Transaction = {
 
 type ViewMode = 'dashboard' | 'transactions' | 'add' | 'analysis';
 
-// Tipe Data User untuk Auth Sederhana
 type UserAccount = {
   name: string;
   pin: string;
@@ -78,6 +79,7 @@ export default function App() {
 
   // --- APP STATE ---
   const [activeTab, setActiveTab] = useState<ViewMode>('dashboard');
+  const [showMobileFilter, setShowMobileFilter] = useState(false); // State untuk toggle filter di HP
   
   const [transactions, setTransactions] = useState<Transaction[]>(() => {
     const saved = localStorage.getItem('financeData');
@@ -110,14 +112,13 @@ export default function App() {
   useEffect(() => { if (isAuthenticated) localStorage.setItem('monthlyBudget', monthlyBudget.toString()); }, [monthlyBudget, isAuthenticated]);
   useEffect(() => { if (isAuthenticated) localStorage.setItem('categoryBudgets', JSON.stringify(categoryBudgets)); }, [categoryBudgets, isAuthenticated]);
   
-  // Simpan User Account
   useEffect(() => {
     if (userAccount) {
       localStorage.setItem('financeUser', JSON.stringify(userAccount));
     }
   }, [userAccount]);
 
-  // --- AUTH HANDLERS ---
+  // --- HANDLERS ---
   const handleLogin = (pin: string) => {
     if (userAccount && userAccount.pin === pin) {
       setIsAuthenticated(true);
@@ -156,7 +157,6 @@ export default function App() {
   const totalExpense = filteredByDate.filter(t => t.type === 'expense').reduce((acc, curr) => acc + curr.amount, 0);
   const balance = totalIncome - totalExpense;
 
-  // --- HANDLERS ---
   const handleDelete = (id: number) => {
     if (confirm('Yakin ingin menghapus transaksi ini?')) {
       setTransactions(transactions.filter(t => t.id !== id));
@@ -195,17 +195,16 @@ export default function App() {
     document.body.removeChild(link);
   };
 
-  // --- AUTH VIEW (LOGIN / REGISTER) ---
   if (!isAuthenticated) {
     return <AuthScreen userAccount={userAccount} onLogin={handleLogin} onRegister={handleRegister} />;
   }
 
-  // --- MAIN APP VIEW ---
+  // --- MAIN LAYOUT RESPONSIVE ---
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col md:flex-row font-sans text-slate-800">
       
-      {/* SIDEBAR */}
-      <aside className="bg-white border-r border-slate-200 w-full md:w-64 flex-shrink-0 flex flex-col sticky top-0 md:h-screen z-10">
+      {/* SIDEBAR (Desktop Only - Hidden di HP) */}
+      <aside className="hidden md:flex bg-white border-r border-slate-200 w-64 flex-shrink-0 flex-col sticky top-0 h-screen z-10">
         <div className="p-6 border-b border-slate-100">
           <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
             <Wallet className="w-8 h-8 text-blue-600" /> Keuanganku
@@ -226,46 +225,64 @@ export default function App() {
           <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg transition">
              <LogOut size={18} /> Keluar (Kunci)
           </button>
-          <p className="text-xs text-slate-400 text-center">© 2024 Financial App v2.1</p>
+          <p className="text-xs text-slate-400 text-center">© 2024 Financial App v2.2</p>
         </div>
       </aside>
 
       {/* MAIN CONTENT AREA */}
-      <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      <main className="flex-1 flex flex-col min-w-0 overflow-hidden pb-20 md:pb-0"> {/* Ada padding bottom di HP agar konten tidak tertutup menu bawah */}
         
-        {/* Top Header */}
-        <header className="bg-white border-b border-slate-200 p-4 md:px-8 flex flex-col md:flex-row justify-between items-center gap-4 sticky top-0 z-10 shadow-sm">
-          <div>
-            <h2 className="text-lg font-bold text-slate-800">
-              {activeTab === 'dashboard' && 'Ringkasan Keuangan'}
-              {activeTab === 'transactions' && 'Daftar Transaksi'}
-              {activeTab === 'add' && 'Input Transaksi'}
-              {activeTab === 'analysis' && 'Laporan Analisis'}
-            </h2>
-            <p className="text-xs text-slate-500">
-              Periode: {filterMonth === 'Semua' ? 'Semua Bulan' : new Date(2024, parseInt(filterMonth), 1).toLocaleDateString('id-ID', { month: 'long' })} {filterYear}
-            </p>
+        {/* Header Responsive */}
+        <header className="bg-white border-b border-slate-200 p-4 sticky top-0 z-20 shadow-sm">
+          <div className="flex justify-between items-center">
+            <div>
+              <h2 className="text-lg font-bold text-slate-800">
+                {activeTab === 'dashboard' && 'Ringkasan'}
+                {activeTab === 'transactions' && 'Riwayat'}
+                {activeTab === 'add' && 'Input'}
+                {activeTab === 'analysis' && 'Analisis'}
+              </h2>
+              <p className="text-[10px] md:text-xs text-slate-500">
+                {filterMonth === 'Semua' ? 'Semua' : new Date(2024, parseInt(filterMonth), 1).toLocaleDateString('id-ID', { month: 'short' })} {filterYear}
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+               {/* Mobile: Tombol Toggle Filter */}
+               <button onClick={() => setShowMobileFilter(!showMobileFilter)} className="md:hidden p-2 text-slate-600 hover:bg-slate-100 rounded-lg">
+                  <Filter size={20} />
+               </button>
+
+               {/* Desktop: Filter Selalu Muncul */}
+               <div className="hidden md:flex items-center gap-2">
+                  <FilterControls 
+                    filterMonth={filterMonth} setFilterMonth={setFilterMonth}
+                    filterYear={filterYear} setFilterYear={setFilterYear}
+                    availableYears={availableYears} downloadCSV={downloadCSV}
+                  />
+               </div>
+               
+               {/* Tombol Logout Mobile */}
+               <button onClick={handleLogout} className="md:hidden p-2 text-red-600 hover:bg-red-50 rounded-lg">
+                  <LogOut size={20} />
+               </button>
+            </div>
           </div>
 
-          <div className="flex items-center gap-2 w-full md:w-auto">
-             <select value={filterMonth} onChange={(e) => setFilterMonth(e.target.value)}
-                className="p-2 border border-slate-300 rounded-lg text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500">
-                <option value="Semua">Semua Bulan</option>
-                {Array.from({ length: 12 }, (_, i) => <option key={i} value={i}>{new Date(0, i).toLocaleDateString('id-ID', { month: 'short' })}</option>)}
-              </select>
-              <select value={filterYear} onChange={(e) => setFilterYear(e.target.value)}
-                className="p-2 border border-slate-300 rounded-lg text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500">
-                <option value="Semua">All Year</option>
-                {availableYears.map(y => <option key={y} value={y}>{y}</option>)}
-              </select>
-              <button onClick={downloadCSV} title="Export CSV" className="p-2 bg-emerald-100 text-emerald-700 rounded-lg hover:bg-emerald-200 transition">
-                <Download size={18} />
-              </button>
-          </div>
+          {/* Mobile Filter Dropdown (Toggled) */}
+          {showMobileFilter && (
+            <div className="md:hidden mt-4 pt-4 border-t border-slate-100 grid grid-cols-2 gap-2 animate-in slide-in-from-top-2">
+               <FilterControls 
+                  filterMonth={filterMonth} setFilterMonth={setFilterMonth}
+                  filterYear={filterYear} setFilterYear={setFilterYear}
+                  availableYears={availableYears} downloadCSV={downloadCSV}
+               />
+            </div>
+          )}
         </header>
 
         {/* Content Wrapper */}
-        <div className="flex-1 overflow-y-auto p-4 md:p-8">
+        <div className="flex-1 overflow-y-auto p-3 md:p-8">
           <div className="max-w-5xl mx-auto">
              {activeTab === 'dashboard' && <DashboardView 
                 balance={balance} totalIncome={totalIncome} totalExpense={totalExpense} 
@@ -306,11 +323,68 @@ export default function App() {
           </div>
         </div>
       </main>
+
+      {/* BOTTOM NAVIGATION (Mobile Only) */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex justify-around p-2 pb-safe z-30 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+        <MobileMenuButton active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon={<LayoutDashboard size={20}/>} label="Home" />
+        <MobileMenuButton active={activeTab === 'transactions'} onClick={() => setActiveTab('transactions')} icon={<List size={20}/>} label="Riwayat" />
+        <div className="-mt-6">
+          <button onClick={() => { setEditData(null); setActiveTab('add'); }} className="bg-blue-600 text-white p-4 rounded-full shadow-lg hover:bg-blue-700 transition transform hover:scale-105 active:scale-95">
+            <PlusCircle size={24} />
+          </button>
+        </div>
+        <MobileMenuButton active={activeTab === 'analysis'} onClick={() => setActiveTab('analysis')} icon={<BarChart3 size={20}/>} label="Analisis" />
+      </nav>
+
     </div>
   );
 }
 
-// --- SUB COMPONENTS (VIEWS) ---
+// --- REUSABLE COMPONENTS ---
+
+interface FilterControlsProps {
+  filterMonth: string;
+  setFilterMonth: (month: string) => void;
+  filterYear: string;
+  setFilterYear: (year: string) => void;
+  availableYears: number[];
+  downloadCSV: () => void;
+}
+
+// Komponen Filter yang dipisahkan agar bisa dipakai di Mobile & Desktop
+const FilterControls = ({ filterMonth, setFilterMonth, filterYear, setFilterYear, availableYears, downloadCSV }: FilterControlsProps) => (
+  <>
+    <select value={filterMonth} onChange={(e) => setFilterMonth(e.target.value)}
+      className="p-2 border border-slate-300 rounded-lg text-xs md:text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500 w-full">
+      <option value="Semua">Semua Bln</option>
+      {Array.from({ length: 12 }, (_, i) => <option key={i} value={i}>{new Date(0, i).toLocaleDateString('id-ID', { month: 'short' })}</option>)}
+    </select>
+    <select value={filterYear} onChange={(e) => setFilterYear(e.target.value)}
+      className="p-2 border border-slate-300 rounded-lg text-xs md:text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500 w-full">
+      <option value="Semua">All Year</option>
+      {availableYears.map((y) => <option key={y} value={y}>{y}</option>)}
+    </select>
+    <button onClick={downloadCSV} className="p-2 bg-emerald-100 text-emerald-700 rounded-lg hover:bg-emerald-200 transition flex items-center justify-center col-span-2 md:col-span-1">
+      <Download size={18} /> <span className="md:hidden ml-2 text-xs font-medium">Export CSV</span>
+    </button>
+  </>
+);
+
+interface MobileMenuButtonProps {
+  active: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  label: string;
+}
+
+const MobileMenuButton = ({ active, onClick, icon, label }: MobileMenuButtonProps) => (
+  <button onClick={onClick} className={`flex flex-col items-center gap-1 p-2 ${active ? 'text-blue-600' : 'text-slate-400 hover:text-slate-600'}`}>
+    {icon}
+    <span className="text-[10px] font-medium">{label}</span>
+  </button>
+);
+
+// ... (AuthScreen, DashboardView, FormView, AnalysisView components - logic remains the same, layout is responsive)
 
 const AuthScreen = ({ userAccount, onLogin, onRegister }: { userAccount: UserAccount | null, onLogin: (p: string) => void, onRegister: (n: string, p: string) => void }) => {
   const [name, setName] = useState('');
@@ -448,66 +522,66 @@ const FormView = ({ editData, onSave, onCancel }: FormViewProps) => {
   };
 
   return (
-    <div className="max-w-2xl mx-auto bg-white p-8 rounded-xl shadow-sm border border-slate-200 animate-in slide-in-from-bottom-4 duration-500">
-      <h2 className="text-xl font-bold mb-6 flex items-center gap-2 text-slate-800 border-b pb-4">
-        {editData ? <Pencil className="w-6 h-6 text-blue-600" /> : <PlusCircle className="w-6 h-6 text-blue-600" />}
-        {editData ? 'Edit Transaksi' : 'Tambah Transaksi Baru'}
+    <div className="max-w-2xl mx-auto bg-white p-6 md:p-8 rounded-xl shadow-sm border border-slate-200 animate-in slide-in-from-bottom-4 duration-500 mb-20 md:mb-0">
+      <h2 className="text-lg md:text-xl font-bold mb-6 flex items-center gap-2 text-slate-800 border-b pb-4">
+        {editData ? <Pencil className="w-5 h-5 md:w-6 md:h-6 text-blue-600" /> : <PlusCircle className="w-5 h-5 md:w-6 md:h-6 text-blue-600" />}
+        {editData ? 'Edit Transaksi' : 'Tambah Baru'}
       </h2>
-      <form onSubmit={handleSubmit} className="space-y-5">
-        <div className="grid grid-cols-2 gap-4 p-1 bg-slate-100 rounded-xl">
+      <form onSubmit={handleSubmit} className="space-y-4 md:space-y-5">
+        <div className="grid grid-cols-2 gap-3 p-1 bg-slate-100 rounded-xl">
             <button type="button" onClick={() => setFormData({...formData, type: 'income', category: 'Gaji'})}
-            className={`py-3 rounded-lg text-sm font-bold transition flex items-center justify-center gap-2 ${formData.type === 'income' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+            className={`py-2 md:py-3 rounded-lg text-sm font-bold transition flex items-center justify-center gap-2 ${formData.type === 'income' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
             <ArrowUpCircle className="w-4 h-4"/> Pemasukan
           </button>
           <button type="button" onClick={() => setFormData({...formData, type: 'expense', category: 'Makanan'})}
-            className={`py-3 rounded-lg text-sm font-bold transition flex items-center justify-center gap-2 ${formData.type === 'expense' ? 'bg-white text-rose-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+            className={`py-2 md:py-3 rounded-lg text-sm font-bold transition flex items-center justify-center gap-2 ${formData.type === 'expense' ? 'bg-white text-rose-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
             <ArrowDownCircle className="w-4 h-4"/> Pengeluaran
           </button>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-slate-600 mb-1">Tanggal</label>
+            <label className="block text-xs md:text-sm font-medium text-slate-600 mb-1">Tanggal</label>
             <input type="date" required value={formData.date} onChange={(e) => setFormData({...formData, date: e.target.value})}
-              className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none" />
+              className="w-full p-2 md:p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-600 mb-1">Kategori</label>
+            <label className="block text-xs md:text-sm font-medium text-slate-600 mb-1">Kategori</label>
             <select value={formData.category} onChange={(e) => setFormData({...formData, category: e.target.value})}
-              className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none bg-white">
+              className="w-full p-2 md:p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none bg-white text-sm">
               {(formData.type === 'expense' ? EXPENSE_CATEGORIES : INCOME_CATEGORIES).map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
         </div>
         <div>
-            <label className="block text-sm font-medium text-slate-600 mb-1">Prioritas</label>
+            <label className="block text-xs md:text-sm font-medium text-slate-600 mb-1">Prioritas</label>
             <div className="flex gap-2">
               {PRIORITIES.map(p => (
                 <button key={p} type="button" onClick={() => setFormData({...formData, priority: p})}
-                  className={`flex-1 py-2 rounded-lg text-sm border font-medium transition ${formData.priority === p ? PRIORITY_STYLES[p] + ' ring-2 ring-offset-1 ring-slate-200' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
+                  className={`flex-1 py-2 rounded-lg text-xs md:text-sm border font-medium transition ${formData.priority === p ? PRIORITY_STYLES[p] + ' ring-2 ring-offset-1 ring-slate-200' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
                   {p}
                 </button>
               ))}
             </div>
         </div>
         <div>
-          <label className="block text-sm font-medium text-slate-600 mb-1">Keterangan</label>
+          <label className="block text-xs md:text-sm font-medium text-slate-600 mb-1">Keterangan</label>
           <input type="text" required placeholder="Contoh: Makan Siang..." value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})}
-            className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none" />
+            className="w-full p-2 md:p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
         </div>
         <div>
-          <label className="block text-sm font-medium text-slate-600 mb-1">Nominal (Rp)</label>
+          <label className="block text-xs md:text-sm font-medium text-slate-600 mb-1">Nominal (Rp)</label>
           <div className="relative">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">Rp</span>
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">Rp</span>
             <input type="number" required min="1" placeholder="0" value={formData.amount} onChange={(e) => setFormData({...formData, amount: e.target.value})}
-              className="w-full pl-10 p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none font-semibold text-slate-700" />
+              className="w-full pl-10 p-2 md:p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none font-semibold text-slate-700 text-sm" />
           </div>
         </div>
         <div className="flex gap-3 pt-4">
           {editData && (
-            <button type="button" onClick={onCancel} className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 rounded-lg transition">Batal</button>
+            <button type="button" onClick={onCancel} className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 rounded-lg transition text-sm">Batal</button>
           )}
-          <button type="submit" className={`flex-1 flex items-center justify-center gap-2 font-bold py-3 rounded-lg transition shadow-lg text-white ${editData ? 'bg-blue-600 hover:bg-blue-700' : 'bg-blue-600 hover:bg-blue-700'}`}>
-            {editData ? <Save className="w-5 h-5"/> : <PlusCircle className="w-5 h-5"/>} {editData ? 'Update Data' : 'Simpan Data'}
+          <button type="submit" className={`flex-1 flex items-center justify-center gap-2 font-bold py-3 rounded-lg transition shadow-lg text-white text-sm ${editData ? 'bg-blue-600 hover:bg-blue-700' : 'bg-blue-600 hover:bg-blue-700'}`}>
+            {editData ? <Save className="w-4 h-4"/> : <PlusCircle className="w-4 h-4"/>} {editData ? 'Update' : 'Simpan'}
           </button>
         </div>
       </form>
@@ -531,7 +605,7 @@ const TransactionsView = ({ transactions, onDelete, onEdit }: TransactionsViewPr
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+      <div className="bg-white p-3 md:p-4 rounded-xl shadow-sm border border-slate-200">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <input type="text" placeholder="Cari transaksi..." value={search} onChange={e => setSearch(e.target.value)}
@@ -574,7 +648,7 @@ const AnalysisView = ({ transactions, totalExpense, monthlyBudget, setMonthlyBud
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
            <div className="flex justify-between items-center mb-6">
              <h3 className="font-bold text-slate-800 flex items-center gap-2"><Target className="w-5 h-5 text-indigo-600"/> Anggaran per Kategori</h3>
-             <span className={`text-xs font-medium px-2 py-1 rounded border ${unallocated < 0 ? 'bg-red-50 text-red-700 border-red-100' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>Sisa Alokasi: {formatRupiah(Math.max(0, unallocated))}</span>
+             <span className={`text-[10px] md:text-xs font-medium px-2 py-1 rounded border ${unallocated < 0 ? 'bg-red-50 text-red-700 border-red-100' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>Sisa Alokasi: {formatRupiah(Math.max(0, unallocated))}</span>
            </div>
            <div className="space-y-6 max-h-[400px] overflow-y-auto pr-2">
               {EXPENSE_CATEGORIES.map(cat => (
@@ -586,8 +660,6 @@ const AnalysisView = ({ transactions, totalExpense, monthlyBudget, setMonthlyBud
     </div>
   );
 };
-
-// --- REUSABLE COMPONENTS ---
 
 const MenuButton = ({ active, onClick, icon, label }: { active: boolean, onClick: () => void, icon: React.ReactNode, label: string }) => (
   <button onClick={onClick} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-all duration-200 ${active ? 'bg-blue-50 text-blue-700 shadow-sm border border-blue-100' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}>
@@ -608,13 +680,13 @@ interface TransactionTableProps {
 
 const TransactionTable = ({ data, title, isIncome, onDelete, onEdit, categories, filterValue, onFilterChange }: TransactionTableProps) => (
   <div className={`rounded-xl shadow-sm border overflow-hidden ${isIncome ? 'border-emerald-100 bg-emerald-50/30' : 'border-rose-100 bg-rose-50/30'}`}>
-    <div className={`p-4 border-b flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 ${isIncome ? 'bg-emerald-50/50 border-emerald-100' : 'bg-rose-50/50 border-rose-100'}`}>
-      <div>
+    <div className={`p-3 md:p-4 border-b flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 ${isIncome ? 'bg-emerald-50/50 border-emerald-100' : 'bg-rose-50/50 border-rose-100'}`}>
+      <div className="w-full sm:w-auto flex justify-between sm:block">
         <h3 className={`font-bold flex items-center gap-2 ${isIncome ? 'text-emerald-700' : 'text-rose-700'}`}>{isIncome ? <ArrowUpCircle size={18}/> : <ArrowDownCircle size={18}/>} {title}</h3>
         <span className={`text-xs px-2 py-1 rounded-full font-bold ${isIncome ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>Total: {formatRupiah(data.reduce((acc, curr) => acc + curr.amount, 0))}</span>
       </div>
       {categories && onFilterChange && (
-        <select value={filterValue} onChange={(e) => onFilterChange(e.target.value)} className={`p-2 text-xs border rounded-lg outline-none focus:ring-2 bg-white/80 ${isIncome ? 'border-emerald-200 focus:ring-emerald-500' : 'border-rose-200 focus:ring-rose-500'}`}>
+        <select value={filterValue} onChange={(e) => onFilterChange(e.target.value)} className={`w-full sm:w-auto p-2 text-xs border rounded-lg outline-none focus:ring-2 bg-white/80 ${isIncome ? 'border-emerald-200 focus:ring-emerald-500' : 'border-rose-200 focus:ring-rose-500'}`}>
           <option value="Semua">Semua Kategori</option>
           {categories.map((c: string) => <option key={c} value={c}>{c}</option>)}
         </select>
@@ -625,15 +697,15 @@ const TransactionTable = ({ data, title, isIncome, onDelete, onEdit, categories,
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className="bg-slate-50/50 text-slate-500 text-xs uppercase tracking-wider">
-              <th className="p-3 font-medium">Tanggal</th><th className="p-3 font-medium">Keterangan</th><th className="p-3 font-medium">Kategori</th><th className="p-3 font-medium text-right">Jumlah</th><th className="p-3 font-medium text-center">Prioritas</th><th className="p-3 font-medium text-center">Aksi</th>
+              <th className="p-3 font-medium whitespace-nowrap">Tanggal</th><th className="p-3 font-medium min-w-[150px]">Keterangan</th><th className="p-3 font-medium">Kategori</th><th className="p-3 font-medium text-right">Jumlah</th><th className="p-3 font-medium text-center">Prioritas</th><th className="p-3 font-medium text-center">Aksi</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {data.map((t: Transaction) => (
+            {data.map((t) => (
               <tr key={t.id} className="hover:bg-slate-50 transition">
                 <td className="p-3 text-sm text-slate-600 whitespace-nowrap">{new Date(t.date).toLocaleDateString('id-ID', {day: 'numeric', month:'short'})}</td>
-                <td className="p-3 text-sm font-medium text-slate-800">{t.description}</td>
-                <td className="p-3 text-sm"><span className="px-2 py-1 rounded text-xs border bg-slate-50 text-slate-500">{t.category}</span></td>
+                <td className="p-3 text-sm font-medium text-slate-800 min-w-[150px]">{t.description}</td>
+                <td className="p-3 text-sm"><span className="px-2 py-1 rounded text-xs border bg-slate-50 text-slate-500 whitespace-nowrap">{t.category}</span></td>
                 <td className={`p-3 text-sm font-bold text-right whitespace-nowrap ${isIncome ? 'text-emerald-600' : 'text-rose-600'}`}>{formatRupiah(t.amount)}</td>
                 <td className="p-3 text-center"><span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${PRIORITY_STYLES[t.priority as PriorityLevel] || 'bg-gray-100'}`}>{t.priority}</span></td>
                 <td className="p-3 text-center flex items-center justify-center gap-1">
@@ -662,11 +734,11 @@ const BudgetCard = ({ title, currentExpense, budget, setBudget }: BudgetCardProp
   const percent = budget > 0 ? Math.min((currentExpense / budget) * 100, 100) : 0;
   const remaining = budget - currentExpense;
   return (
-    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+    <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-slate-200">
       <div className="flex justify-between items-start mb-4">
         <div className="flex items-center gap-2">
           <div className="p-2 bg-indigo-100 rounded-lg"><Target className="w-5 h-5 text-indigo-600" /></div>
-          <div><h3 className="font-bold text-slate-800">{title || 'Target Anggaran'}</h3></div>
+          <div><h3 className="font-bold text-slate-800 text-sm md:text-base">{title || 'Target Anggaran'}</h3></div>
         </div>
         <button onClick={() => { setTemp(budget.toString()); setIsEditing(true); }} className="text-slate-400 hover:text-indigo-600"><Pencil size={16} /></button>
       </div>
@@ -677,14 +749,14 @@ const BudgetCard = ({ title, currentExpense, budget, setBudget }: BudgetCardProp
         </div>
       ) : (
         <>
-          <div className="flex justify-between text-sm mb-2 font-medium">
+          <div className="flex justify-between text-xs md:text-sm mb-2 font-medium">
             <span className="text-slate-600">Terpakai: {formatRupiah(currentExpense)}</span>
             <span className="text-slate-900">Budget: {formatRupiah(budget)}</span>
           </div>
-          <div className="w-full h-4 bg-slate-100 rounded-full overflow-hidden mb-3">
+          <div className="w-full h-3 md:h-4 bg-slate-100 rounded-full overflow-hidden mb-3">
             <div className={`h-full transition-all duration-500 ${percent > 90 ? 'bg-red-500' : percent > 75 ? 'bg-yellow-500' : 'bg-emerald-500'}`} style={{ width: `${percent}%` }} />
           </div>
-          <div className="text-sm font-bold">{remaining >= 0 ? <span className="text-emerald-600">Sisa: {formatRupiah(remaining)}</span> : <span className="text-red-600 flex items-center gap-1"><AlertCircle size={14}/> Over: {formatRupiah(Math.abs(remaining))}</span>}</div>
+          <div className="text-xs md:text-sm font-bold">{remaining >= 0 ? <span className="text-emerald-600">Sisa: {formatRupiah(remaining)}</span> : <span className="text-red-600 flex items-center gap-1"><AlertCircle size={14}/> Over: {formatRupiah(Math.abs(remaining))}</span>}</div>
         </>
       )}
     </div>
@@ -717,14 +789,14 @@ const CategoryBudgetRow = ({ category, spent, budget, onUpdate }: CategoryBudget
                </div>
              ) : (
                <div className="flex items-center gap-2">
-                 <span className="text-xs text-slate-500">{formatRupiah(spent)} / {budget > 0 ? formatRupiah(budget) : '∞'}</span>
+                 <span className="text-[10px] md:text-xs text-slate-500">{formatRupiah(spent)} / {budget > 0 ? formatRupiah(budget) : '∞'}</span>
                  <button onClick={() => setIsEditing(true)} className="text-slate-300 hover:text-slate-500"><Settings size={12}/></button>
                </div>
              )}
           </div>
        </div>
        {budget > 0 && (
-         <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+         <div className="w-full h-1.5 md:h-2 bg-slate-100 rounded-full overflow-hidden">
             <div className={`h-full ${percent >= 100 ? 'bg-red-500' : percent > 80 ? 'bg-yellow-400' : 'bg-emerald-400'}`} style={{ width: `${percent}%` }}></div>
          </div>
        )}
@@ -745,7 +817,7 @@ const DonutChart = ({ data }: { data: { category: string, amount: number }[] }) 
   
   return (
     <div className="flex flex-col md:flex-row items-center gap-8 justify-center">
-      <div className="relative w-48 h-48 flex-shrink-0">
+      <div className="relative w-40 h-40 md:w-48 md:h-48 flex-shrink-0">
         <svg viewBox="-1 -1 2 2" className="w-full h-full -rotate-90 transform">
           {segments.map((item) => {
             const x1 = Math.cos(2 * Math.PI * item.start), y1 = Math.sin(2 * Math.PI * item.start);
@@ -756,7 +828,7 @@ const DonutChart = ({ data }: { data: { category: string, amount: number }[] }) 
               <path key={item.category} d={`M 0 0 L ${x1} ${y1} A 1 1 0 ${large} 1 ${x2} ${y2} Z`} fill={color} stroke="white" strokeWidth="0.05"/>;
           })}
         </svg>
-        <div className="absolute inset-0 m-auto w-24 h-24 bg-white rounded-full flex items-center justify-center text-xs font-bold text-slate-500">Total</div>
+        <div className="absolute inset-0 m-auto w-20 h-20 md:w-24 md:h-24 bg-white rounded-full flex items-center justify-center text-xs font-bold text-slate-500">Total</div>
       </div>
       <div className="space-y-2 w-full max-w-xs">
         {data.map(item => (
